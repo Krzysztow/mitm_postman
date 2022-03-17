@@ -2,26 +2,26 @@
 
 from collections import OrderedDict
 import json
-from operator import attrgetter
 import uuid
-import argparse
-from urllib.parse import urlencode
 
 from mitmproxy import ctx
 
 HOST_FILTER_PARAM = "host_filter"
 COLLECTION_NAME_PARAM = "collection_name"
 
+
 def load(l):
     l.add_option(HOST_FILTER_PARAM, str, "example.com", "Host filter option")
     l.add_option(COLLECTION_NAME_PARAM, str, "collection_name", "Collection name option")
 
+
 def configure(updated):
-    if HOST_FILTER_PARAM in updated or COLLECTION_NAME_PARAM in updated :
+    if HOST_FILTER_PARAM in updated or COLLECTION_NAME_PARAM in updated:
         ctx.log.info("host filter : " + ctx.options.host_filter)
         ctx.log.info("collection name : " + ctx.options.collection_name)
         global addons
         addons = [Postman(ctx.options.host_filter, ctx.options.collection_name)]
+
 
 class Postman:
     def __init__(self, host, collection_name='TestCollection'):
@@ -141,30 +141,22 @@ class Collection(object):
         self._folders.append(folder)
         folder._collection = self
 
-    def get_all_requests(self):
-        """
-        Get all requests including those in the folders
-        :return: list of Request objects
-        """
-        requests = list(self._requests)
-        for f in self._folders:
-            requests.extend(f._requests)
-        return sorted(requests, key=attrgetter('id'))
-
     def serialize(self):
         """
         Serialize Collection object
         :return: Collection dict
         """
-        obj = OrderedDict()
-        obj['id'] = self.id
-        obj['name'] = self.name
+        obj = OrderedDict({
+            'info': OrderedDict({
+                '_postman_id': self.id,
+                'name': self.name,
+                'schema': 'https://schema.getpostman.com/json/collection/v2.0.0/collection.json'
+            })
+        })
         if self.description is not None:
-            obj['description'] = self.description
-        obj['order'] = [r.id for r in self._requests]
-        obj['folders'] = [f.serialize() for f in sorted(self._folders, key=attrgetter('id'))]
-        requests = self.get_all_requests()
-        obj['requests'] = [r.serialize() for r in requests]
+            obj['info']['description'] = self.description
+
+        obj['item'] = [f.serialize() for f in self._folders]
         return obj
 
     def save_to_file(self):
@@ -187,7 +179,6 @@ class Folder(object):
         """
         self.id = str(uuid.uuid4())
         self.name = name
-        self.order = []
         self._requests = []
         self._collection = collection
 
@@ -212,10 +203,11 @@ class Folder(object):
         Serialize Folder object
         :return: Folder dict
         """
-        obj = OrderedDict()
-        obj['id'] = self.id
-        obj['name'] = self.name
-        obj['order'] = [r.id for r in self._requests]
+        obj = OrderedDict({
+            'id': self.id,
+            'name': self.name,
+            'item': [r.serialize() for r in self._requests]
+        })
         return obj
 
 
@@ -254,27 +246,44 @@ class Request(object):
         Serialize Request object
         :return: Request dict
         """
-        headers = {} if self.headers is None else self.headers
-        obj = OrderedDict()
-        obj['id'] = self.id
-        obj['name'] = self.name
-        obj['url'] = self.url
-        obj['method'] = self.method
-        if self.data is not None and isinstance(self.data, dict) and not self.is_json:
-            obj['dataMode'] = 'urlencoded'
-            obj['data'] = [dict(key=k, value=v, enabled=True, type='text') for k, v in self.data.items()]
-        elif self.data is not None and not self.is_json:
-            obj['dataMode'] = 'raw'
-            obj['rawModeData'] = str(self.data)
-        elif self.data is not None and self.is_json:
-            obj['dataMode'] = 'raw'
-            obj['rawModeData'] = json.dumps(self.data, indent=4)
-        obj['headers'] = ''.join('%s: %s\n' % kv for kv in headers.items())
+        obj = OrderedDict({
+            'name': self.name,
+            'response': [],
+            'request': self._serialize_request()
+        })
+        return obj
+
+    def _serialize_request(self):
+        obj = OrderedDict({
+            'url': self.url,
+            'method': self.method,
+            'headers': [] if self.headers is None else [{'key': k, 'value': v} for k, v in self.headers.items()]
+        })
+
+        if self.data is not None:
+            obj['body'] = self._serialize_request_body()
+
         if self.description is not None:
-            obj['descriptionFormat'] = 'markdown'
-            obj['description'] = self.description
-        if self._parent is not None:
-            obj['collectionId'] = self._parent.get_collection_id()
-        if isinstance(self._parent, Folder):
-            obj['folder'] = self._parent.id
+            obj['description'] = self._serialize_request_description()
+
+        return obj
+
+    def _serialize_request_description(self):
+        return {
+            'type': 'text/markdown',
+            'content': self.description
+        }
+
+    def _serialize_request_body(self):
+        obj = {}
+        if isinstance(self.data, dict) and not self.is_json:
+            obj['mode'] = 'urlencoded'
+            obj['data'] = [dict(key=k, value=v, enabled=True, type='text') for k, v in self.data.items()]
+        elif not self.is_json:
+            obj['mode'] = 'raw'
+            obj['raw'] = str(self.data)
+        elif self.is_json:
+            obj['mode'] = 'raw'
+            obj['raw'] = json.dumps(self.data, indent=4)
+
         return obj
