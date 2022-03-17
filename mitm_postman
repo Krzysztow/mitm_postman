@@ -1,3 +1,11 @@
 #!/usr/bin/env bash
 
+if [ $# -ne 2 ]
+then
+    echo "Expected number of arguments: 2, gotten: $#"
+    echo "Usage:"
+    echo -e "\t./mitm <host> <collection-name>"
+    exit 1
+fi
+
 mitmdump --set upstream_cert=false --set host_filter=${1} --set collection_name=${2} --ssl-insecure -p 9500 -q -s "lib/postman.py"
