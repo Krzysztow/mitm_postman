@@ -44,8 +44,11 @@ class Postman:
             return
         headers = {}
         for k, v in flow.request.headers.items():
-            if k != 'Content-Length':
+            if k.lower() not in ['content-length', 'authorization']:
                 headers[k] = v
+            else:
+                headers['_' + k] = v
+        headers['_url'] = flow.request.url
         content = flow.request.content
         if content:
             content = content.decode('utf-8')
