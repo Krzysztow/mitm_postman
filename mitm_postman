@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
 
-if [ $# -ne 2 ]
+if [ $# -ne 3 ]
 then
     echo "Expected number of arguments: 2, gotten: $#"
     echo "Usage:"
-    echo -e "\t./mitm <host> <collection-name>"
+    echo -e "\t./mitm <host> <collection-name> <host-replacement>"
+    echo -e "\t.host-replacement: (global-host|direct-host)"
     exit 1
 fi
 
-mitmdump --set upstream_cert=false --set host_filter=${1} --set collection_name=${2} --ssl-insecure -p 9500 -q -s "lib/postman.py"
+HOST=${1}
+COLLECTION_NAME=${2}
+HOST_REPLACEMENT=${3}
+
+mitmdump --set upstream_cert=false --set host_filter=${HOST} --set collection_name=${COLLECTION_NAME} --ssl-insecure -p 9500 -q -s "lib/postman.py"
+
+cp ${COLLECTION_NAME}.json ${COLLECTION_NAME}.json.bkp
+
+
+sed -i "s|${HOST}\(:[0-9]\+\)\{0,1\}|{{${HOST_REPLACEMENT}}}|g" ${COLLECTION_NAME}.json                                             # replace host with Postman placeholder
+sed -i "s|<evs:studioId>[0-9]*</evs:studioId>|<evs:studioId>{{studioId}}</evs:studioId>|g" ${COLLECTION_NAME}.json                  # update SOAP studio information header to be dynamic
+sed -i "s|studioLicence=[^\"]\+|studioLicence={{studioLicence-encoded}}|g" ${COLLECTION_NAME}.json                                  # update Cookie studio license to be dynamic
+sed -i "s|>[^<]\+</wsse:Password>|>{{admin-password}}</wsse:Password>|g" ${COLLECTION_NAME}.json                                    # update SOAP wsse security to be dynamic
+sed -i "s|<wsse:Username>[^<]*</wsse:Username>|<wsse:Username>{{admin-username}}</wsse:Username>|g" ${COLLECTION_NAME}.json         # same - update SOAP security
