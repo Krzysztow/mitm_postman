@@ -9,11 +9,22 @@ then
     exit 1
 fi
 
+PORT=9500
 HOST=${1}
 COLLECTION_NAME=${2}
 HOST_REPLACEMENT=${3}
 
-mitmdump --set upstream_cert=false --set host_filter=${HOST} --set collection_name=${COLLECTION_NAME} --ssl-insecure -p 9500 -q -s "lib/postman.py"
+if [ "$HOST_REPLACEMENT" != "direct-host" -a "$HOST_REPLACEMENT" != "global-host" ]
+then
+    echo "HOST_REPLACEMENT needs to be either 'direct-host' or 'global-host'."
+    echo "Current value \"$HOST_REPLACEMENT\""
+    exit 2
+fi
+
+echo "Listening on port $PORT..."
+echo "Press CTRL+C when finished."
+
+mitmdump --set upstream_cert=false --set host_filter=${HOST} --set collection_name=${COLLECTION_NAME} --ssl-insecure -p $PORT -q -s "lib/postman.py"
 
 cp ${COLLECTION_NAME}.json ${COLLECTION_NAME}.json.bkp
 
